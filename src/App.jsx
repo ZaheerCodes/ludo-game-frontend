@@ -27,12 +27,12 @@ function App() {
     let [dice, setDice] = useState(0);
     let groups = ['red', 'green', 'yellow', 'blue'];
     let [turn, setTurn] = useState(0);
-
     const gotisRef = useRef(gotis);
     const finishRef = useRef(false);
     const movingRef = useRef({ id: null, step: 0, total: 0, running: false });
     const timeoutRef = useRef(null);
     const turnRef = useRef(turn);
+    let [stopInput, setStopInput] = useState(false);
 
     useEffect(() => {
         turnRef.current = turn;
@@ -44,8 +44,8 @@ function App() {
 
     useEffect(() => {
         if (finishRef.current) {
-            const { id, diceUsed } = finishRef.current;
-            checkCollision(id, gotis);
+            const { id } = finishRef.current;
+            if (checkCollision(id, gotis) === false) setStopInput(false);
             finishRef.current = null;
         }
     }, [gotis]);
@@ -66,6 +66,7 @@ function App() {
             total: localDice,
             running: true,
         };
+        setStopInput(true);
         doStep();
         function doStep() {
             const { id } = movingRef.current;
@@ -107,14 +108,15 @@ function App() {
 
     function checkCollision(id, gotis) {
         const tg = gotisRef.current.find((g) => g.key === id);
-        if (tg === null || tg === undefined || gotis === undefined) return;
+        if (tg === null || tg === undefined || gotis === undefined)
+            return false;
         turn = getTurnFromId(tg.key);
         let opponents = gotis.filter((g) => !g.key.includes(turn));
-        let killGotisId = [];
+        let sendHomeIds = [];
         let saveCellsIdx = [0, 8, 13, 21, 26, 34, 39, 47];
         const tgOpened = tg.cell <= 0;
         const tgAtSave = saveCellsIdx.includes(tg.cell);
-        if (tgOpened || tgAtSave) return;
+        if (tgOpened || tgAtSave) return false;
         for (let j = 0; j < opponents.length; j++) {
             const og = opponents[j];
             const ogNotOpen = og.cell === -1;
@@ -123,9 +125,16 @@ function App() {
             const matchX = tg?.path?.[tg.cell]?.x === og?.path?.[og.cell]?.x;
             const matchY = tg?.path?.[tg.cell]?.y === og?.path?.[og.cell]?.y;
             if (matchX && matchY) {
-                killGotisId.push(og.key);
-                killGoti(og.key);
+                sendHomeIds.push(og.key);
             }
+        }
+
+        if (sendHomeIds.length > 0) {
+            const promises = sendHomeIds.map((g) => goHome(g));
+            Promise.allSettled(promises).then(() => setStopInput(false));
+        } else {
+            console.log(false);
+            return false;
         }
 
         function getTurnFromId(id) {
@@ -138,29 +147,35 @@ function App() {
         }
     }
 
-    function killGoti(id) {
+    function goHome(id) {
         let cell = 50;
-        const repeatFunc = setInterval(moveStep, 150);
-        function moveStep() {
-            setGotis((prev) => {
-                let arr = prev.map((g) => {
-                    if (g.key === id) {
-                        g.cell--;
-                        cell = g.cell;
-                        return new GotiClass(id, g.path, g.initialPos, g.cell);
-                    }
-                    return g;
+        return new Promise((resolve) => {
+            let repeatFunc = setInterval(() => {
+                setGotis((prev) => {
+                    return prev.map((g) => {
+                        if (g.key === id) {
+                            g.cell--;
+                            cell = g.cell;
+                            return new GotiClass(
+                                id,
+                                g.path,
+                                g.initialPos,
+                                g.cell
+                            );
+                        }
+                        return g;
+                    });
                 });
-                return arr;
-            });
-            if (cell === -1) {
-                clearInterval(repeatFunc);
-            }
-        }
+                if (cell === -1) {
+                    clearInterval(repeatFunc);
+                    resolve();
+                }
+            }, 150);
+        });
     }
 
     const rollDice = (curTurn, gotis = gotisRef.current) => {
-        if (movingRef.current.running || dice > 0) return;
+        if (movingRef.current.running || dice > 0 || stopInput) return;
         let num = Math.ceil(Math.random() * 6);
         setDice((prev) => {
             if (prev > 0) return prev;
@@ -168,8 +183,9 @@ function App() {
                 .filter((g) => g.key.includes(groups[curTurn]))
                 .some((g) => g.canMove(num));
             console.log(groups[curTurn] + ' : ' + num);
-            if (flag) return num;
-            else {
+            if (flag) {
+                return num;
+            } else {
                 nextTurn();
                 return 0;
             }
@@ -182,6 +198,7 @@ function App() {
 
     useEffect(() => {
         function handleKeyDown(e) {
+            if (stopInput) return;
             if (e.code === 'Space') {
                 e.preventDefault();
                 rollDice(turnRef.current);
@@ -189,7 +206,7 @@ function App() {
         }
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, []);
+    }, [stopInput]);
 
     return (
         <>
@@ -203,10 +220,12 @@ function App() {
                         path={g.path}
                         turn={{ color: groups[turn], steps: dice }}
                         onMove={moveGoti}
+                        stopInput={stopInput}
                     />
                 ))}
             </Board>
             <p>{groups[turn] + ' : ' + dice}</p>
+            <p>{'' + stopInput}</p>
         </>
     );
 }

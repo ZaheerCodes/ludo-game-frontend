@@ -2,7 +2,7 @@ import styles from './Goti.module.css';
 import clsx from 'clsx';
 import PropTypes from 'prop-types';
 
-function Goti({ id, cell, initialPos, path, turn, onMove }) {
+function Goti({ id, cell, initialPos, path, turn, onMove, stopInput }) {
     let pX = cell >= 0 ? path[cell].x : initialPos.x;
     let pY = cell >= 0 ? path[cell].y : initialPos.y;
     let isClicked = false;
@@ -28,7 +28,7 @@ function Goti({ id, cell, initialPos, path, turn, onMove }) {
     }
 
     function handleClick() {
-        if (isClicked) return;
+        if (isClicked || stopInput) return;
         isClicked = true;
         onMove(id, turn.steps);
         setTimeout(() => {
