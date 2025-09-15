@@ -28,7 +28,7 @@ function App() {
     let groups = ['red', 'green', 'yellow', 'blue'];
     let [turn, setTurn] = useState(0);
     const gotisRef = useRef(gotis);
-    const finishRef = useRef(false);
+    const finishRef = useRef(null);
     const movingRef = useRef({ id: null, step: 0, total: 0, running: false });
     const timeoutRef = useRef(null);
     const turnRef = useRef(turn);
@@ -43,12 +43,40 @@ function App() {
     }, [gotis]);
 
     useEffect(() => {
-        if (finishRef.current) {
-            const { id } = finishRef.current;
-            if (checkCollision(id, gotis) === false) setStopInput(false);
+        if (finishRef.current?.id) {
+            const { id, target, localDice } = finishRef.current;
+            const cols = handleCollision(id, gotis).length;
+            if (cols === 0) setStopInput(false);
+            if (
+                cols === 0 &&
+                localDice !== 6 &&
+                target.cell + localDice !== target.path.length
+            )
+                nextTurn();
             finishRef.current = null;
         }
     }, [gotis]);
+
+    useEffect(() => {
+        if (dice > 0) {
+            const movables = GotiClass.getMovables(dice, groups[turn], gotis);
+            if (movables.length === 1) {
+                moveGoti(movables[0].key);
+            }
+        }
+    }, [dice, turn, gotis]);
+
+    useEffect(() => {
+        function handleKeyDown(e) {
+            if (stopInput) return;
+            if (e.code === 'Space') {
+                e.preventDefault();
+                rollDice(turnRef.current);
+            }
+        }
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [stopInput]);
 
     function moveGoti(id) {
         const localDice = dice;
@@ -73,13 +101,14 @@ function App() {
             setGotis((prev) => {
                 return prev.map((g) => {
                     if (g.key === id) {
-                        let newCell;
-                        if (g.cell < 0 && localDice === 6) {
-                            newCell = 0;
-                        } else {
-                            newCell = g.cell + 1;
-                        }
-                        return new GotiClass(id, g.path, g.initialPos, newCell);
+                        let newGoti = new GotiClass(
+                            id,
+                            g.path,
+                            g.initialPos,
+                            GotiClass.getNewCell(g, localDice)
+                        );
+                        if (newGoti.cell === redPath.length - 1) prevTurn();
+                        return newGoti;
                     }
                     return g;
                 });
@@ -93,58 +122,27 @@ function App() {
             if (movingRef.current.step < movingRef.current.total) {
                 timeoutRef.current = setTimeout(doStep, 200);
             } else {
-                finishRef.current = { id, diceUsed: localDice };
+                finishRef.current = { id, target, localDice };
                 movingRef.current = {
                     id: null,
                     step: 0,
                     total: 0,
                     running: false,
                 };
-                if (localDice !== 6) nextTurn();
                 setDice(0);
             }
         }
     }
 
-    function checkCollision(id, gotis) {
-        const tg = gotisRef.current.find((g) => g.key === id);
-        if (tg === null || tg === undefined || gotis === undefined)
-            return false;
-        turn = getTurnFromId(tg.key);
-        let opponents = gotis.filter((g) => !g.key.includes(turn));
-        let sendHomeIds = [];
-        let saveCellsIdx = [0, 8, 13, 21, 26, 34, 39, 47];
-        const tgOpened = tg.cell <= 0;
-        const tgAtSave = saveCellsIdx.includes(tg.cell);
-        if (tgOpened || tgAtSave) return false;
-        for (let j = 0; j < opponents.length; j++) {
-            const og = opponents[j];
-            const ogNotOpen = og.cell === -1;
-            const ogAtSave = saveCellsIdx.includes(og.cell);
-            if (ogNotOpen || ogAtSave) continue;
-            const matchX = tg?.path?.[tg.cell]?.x === og?.path?.[og.cell]?.x;
-            const matchY = tg?.path?.[tg.cell]?.y === og?.path?.[og.cell]?.y;
-            if (matchX && matchY) {
-                sendHomeIds.push(og.key);
-            }
-        }
-
+    function handleCollision(id, gotis) {
+        const g = gotis?.find((g) => g.key === id);
+        if (!g) return [];
+        let sendHomeIds = GotiClass.getCollidedGotis(g, gotis);
         if (sendHomeIds.length > 0) {
             const promises = sendHomeIds.map((g) => goHome(g));
             Promise.allSettled(promises).then(() => setStopInput(false));
-        } else {
-            console.log(false);
-            return false;
         }
-
-        function getTurnFromId(id) {
-            let result = '';
-            for (let i = 0; i < id.length; i++) {
-                if (id[i] === '-') break;
-                result += id[i];
-            }
-            return result;
-        }
+        return sendHomeIds;
     }
 
     function goHome(id) {
@@ -154,13 +152,12 @@ function App() {
                 setGotis((prev) => {
                     return prev.map((g) => {
                         if (g.key === id) {
-                            g.cell--;
-                            cell = g.cell;
+                            cell = g.cell - 1;
                             return new GotiClass(
                                 id,
                                 g.path,
                                 g.initialPos,
-                                g.cell
+                                cell
                             );
                         }
                         return g;
@@ -176,15 +173,15 @@ function App() {
 
     const rollDice = (curTurn, gotis = gotisRef.current) => {
         if (movingRef.current.running || dice > 0 || stopInput) return;
-        let num = Math.ceil(Math.random() * 6);
         setDice((prev) => {
-            if (prev > 0) return prev;
-            let flag = gotis
-                .filter((g) => g.key.includes(groups[curTurn]))
-                .some((g) => g.canMove(num));
-            console.log(groups[curTurn] + ' : ' + num);
-            if (flag) {
-                return num;
+            const steps = GotiClass.rollDice(prev);
+            const movables = GotiClass.getMovables(
+                steps,
+                groups[curTurn],
+                gotis
+            );
+            if (movables.length > 0) {
+                return steps;
             } else {
                 nextTurn();
                 return 0;
@@ -196,17 +193,9 @@ function App() {
         setTurn((prev) => (prev + 1) % 4);
     }
 
-    useEffect(() => {
-        function handleKeyDown(e) {
-            if (stopInput) return;
-            if (e.code === 'Space') {
-                e.preventDefault();
-                rollDice(turnRef.current);
-            }
-        }
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [stopInput]);
+    function prevTurn() {
+        setTurn((prev) => (prev - 1) % 4);
+    }
 
     return (
         <>
