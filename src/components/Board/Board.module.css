@@ -1,0 +1,10 @@
+.board {
+    min-width: 100vh;
+    min-height: 100vh;
+    background-image: url('/public/Ludo.svg');
+    background-position: center;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-color: #111111;
+    position: relative;
+}

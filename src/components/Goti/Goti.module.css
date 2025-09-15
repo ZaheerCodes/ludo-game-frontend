@@ -1,0 +1,21 @@
+.goti-wrapper,
+.goti-img {
+    --cell-size: calc(100vh / 16);
+}
+
+.goti-wrapper {
+    position: absolute;
+    width: var(--cell-size);
+    height: var(--cell-size);
+}
+
+.goti-img {
+    --img-height: calc(var(--cell-size) + (var(--cell-size) / 20));
+    --img-offset-y: calc(var(--cell-size) / 6);
+    --img-offset-x: calc(var(--cell-size) / 6.3);
+    position: absolute;
+    top: calc(-1 * var(--img-offset-y));
+    left: var(--img-offset-x);
+    height: var(--img-height);
+    background-image: url('../../../public/Goti_green.png');
+}

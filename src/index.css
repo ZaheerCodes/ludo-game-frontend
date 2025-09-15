@@ -1,0 +1,16 @@
+#root {
+    display: flex;
+    gap: 2rem;
+    background-color: #111111;
+}
+
+p {
+    color: white;
+}
+
+body,
+#root,
+#root * {
+    margin: 0;
+    padding: 0;
+}
